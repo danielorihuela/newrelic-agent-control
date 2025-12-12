@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  build-clean-caches-clippy:
+  build-clean-caches-dev:
     name: Build clean caches
     runs-on: ${{ matrix.os }}
     strategy:
@@ -23,60 +23,27 @@ jobs:
 
       - uses: ./.github/actions/install-rust-toolchain
         with:
-          components: clippy
+          components: clippy, llvm-tools-preview
 
       - uses: ./.github/actions/rust-cache
         with:
-          identifier: 'clippy'
+          identifier: 'dev'
           restore-strategy: 'exact'
           save-cache: true
       
       - name: cargo clippy with compiler warnings
         run: cargo clippy --workspace --all-targets -- -D warnings -D clippy::all
-
-  build-clean-caches-test-dev:
-    name: Build clean caches
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest ]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: ./.github/actions/rust-cache
-        with:
-          identifier: 'test-dev'
-          restore-strategy: 'exact'
-          save-cache: true
-
-      - uses: ./.github/actions/install-rust-toolchain
       
-      - name: cargo clippy with compiler warnings
-        run: |
-          cargo test --no-run --workspace --exclude 'newrelic_agent_control' --all-targets -- --include-ignored
-          make -C agent-control test/cache
-
-  build-clean-caches-coverage:
-    name: Build clean caches
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: ./.github/actions/rust-cache
-        with:
-          identifier: 'coverage'
-          restore-strategy: 'exact'
-          save-cache: true
-
-      - uses: ./.github/actions/install-rust-toolchain
-        with:
-          components: llvm-tools-preview
-
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@71765c00dd3e08a5484a5b9e82a4c88b86520e0e # 71765c00dd3e08a5484a5b9e82a4c88b86520e0e
       
       - name: Generate coverage report
         run: COVERAGE_OUT_FORMAT=json COVERAGE_OUT_FILEPATH=jcov.info make coverage
+      
+      - name: compile tests
+        run: |
+          cargo test --no-run --workspace --exclude 'newrelic_agent_control' --all-targets -- --include-ignored
+          make -C agent-control test/cache
   
   build-clean-caches-release:
     name: Build clean caches
