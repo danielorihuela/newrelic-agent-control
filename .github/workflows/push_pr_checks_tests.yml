@@ -343,6 +343,11 @@ jobs:
           identifier: 'clippy'
           restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
           save-cache: true
+      - uses: ./.github/actions/rust-cache
+        with:
+          identifier: 'release'
+          restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
+          save-cache: true
 
       - name: Detect unused dependencies
         run: cargo shear
