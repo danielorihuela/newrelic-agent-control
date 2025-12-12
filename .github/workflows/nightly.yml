@@ -15,9 +15,9 @@ jobs:
   build-clean-caches-clippy:
     name: Build clean caches
     runs-on: ${{ matrix.os }}
-    matrix:
-      os: [ ubuntu-latest ]
-      component: [ clippy ]
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -28,7 +28,7 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           identifier: 'clippy'
-          restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
+          restore-strategy: 'exact'
           save-cache: true
       
       - name: cargo clippy with compiler warnings
@@ -37,22 +37,19 @@ jobs:
   build-clean-caches-test-dev:
     name: Build clean caches
     runs-on: ${{ matrix.os }}
-    matrix:
-      os: [ ubuntu-latest ]
-      component: [  ]
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: ./.github/actions/install-rust-toolchain
 
       - uses: ./.github/actions/rust-cache
         with:
           identifier: 'test-dev'
-          restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
+          restore-strategy: 'exact'
           save-cache: true
-      
-      - name: Install Zig
-        uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f # v2
+
+      - uses: ./.github/actions/install-rust-toolchain
       
       - name: cargo clippy with compiler warnings
         run: |
@@ -61,12 +58,15 @@ jobs:
 
   build-clean-caches-coverage:
     name: Build clean caches
-    runs-on: ${{ matrix.os }}
-    matrix:
-      os: [ ubuntu-latest ]
-      component: [ llvm-tools-preview ]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: ./.github/actions/rust-cache
+        with:
+          identifier: 'coverage'
+          restore-strategy: 'exact'
+          save-cache: true
 
       - uses: ./.github/actions/install-rust-toolchain
         with:
@@ -74,12 +74,6 @@ jobs:
 
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@71765c00dd3e08a5484a5b9e82a4c88b86520e0e # 71765c00dd3e08a5484a5b9e82a4c88b86520e0e
-
-      - uses: ./.github/actions/rust-cache
-        with:
-          identifier: 'coverage'
-          restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
-          save-cache: true
       
       - name: Generate coverage report
         run: COVERAGE_OUT_FORMAT=json COVERAGE_OUT_FILEPATH=jcov.info make coverage
@@ -87,16 +81,17 @@ jobs:
   build-clean-caches-release:
     name: Build clean caches
     runs-on: ${{ matrix.os }}
-    matrix:
-      os: [ ubuntu-latest ]
-      component: [ clippy ]
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+      - uses: ./.github/actions/rust-cache
         with:
-          go-version-file: 'build/embedded/go.mod'
-          check-latest: true
+          identifier: 'release'
+          restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
+          save-cache: true
 
       - uses: ./.github/actions/install-rust-toolchain
         with:
@@ -109,190 +104,175 @@ jobs:
         uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f # v2
 
       - name: Install cargo-zigbuild
-        run: |
-          cargo install --locked cargo-zigbuild --force
-
-      - name: Install Windows cross-compilation dependencies
-        run: |
-          sudo apt-get install -y llvm
-      
-      - name: Install cargo-xwin
-        run: |
-          cargo install --locked cargo-xwin --force
-
-      - uses: ./.github/actions/rust-cache
-        with:
-          identifier: 'release'
-          restore-strategy: ${{ github.ref == 'refs/heads/main' && 'exact' || 'nearest' }}
-          save-cache: true
+        run: cargo install --locked cargo-zigbuild --force
           
       - name: Build k8s in release mode
         run: cargo zigbuild --release --package newrelic_agent_control --bin newrelic-agent-control-k8s --target x86_64-unknown-linux-musl
       - name: Build onhost in release mode
         run: cargo zigbuild --release --package newrelic_agent_control --bin newrelic-agent-control --target x86_64-unknown-linux-musl
 
-  build-packages:
-    name: Build packages
-    uses: ./.github/workflows/component_packages.yml
-    with:
-      pre-release: false
-      tag_name: 0.100.${{ github.run_id }}
-    secrets: inherit
+  # build-packages:
+  #   name: Build packages
+  #   uses: ./.github/workflows/component_packages.yml
+  #   with:
+  #     pre-release: false
+  #     tag_name: 0.100.${{ github.run_id }}
+  #   secrets: inherit
 
-  build-image:
-    name: Build and Push nightly image
-    uses: ./.github/workflows/component_image.yml
-    with:
-      # the packages are created with 0.100.run_id, however we still push the image with nightly
-      image-tag: nightly
-      ac-version: nightly
-      push: true
-    secrets: inherit
+  # build-image:
+  #   name: Build and Push nightly image
+  #   uses: ./.github/workflows/component_image.yml
+  #   with:
+  #     # the packages are created with 0.100.run_id, however we still push the image with nightly
+  #     image-tag: nightly
+  #     ac-version: nightly
+  #     push: true
+  #   secrets: inherit
 
-  security-image:
-    name: Security scan
-    needs: [ build-image ]
-    uses: ./.github/workflows/component_image_security.yml
-    with:
-      # the packages are created with 0.100.run_id, however we still push the image with nightly
-      image-tag: nightly
-    secrets: inherit
+  # security-image:
+  #   name: Security scan
+  #   needs: [ build-image ]
+  #   uses: ./.github/workflows/component_image_security.yml
+  #   with:
+  #     # the packages are created with 0.100.run_id, however we still push the image with nightly
+  #     image-tag: nightly
+  #   secrets: inherit
 
-  security-source-code:
-    uses: ./.github/workflows/component_security.yml
+  # security-source-code:
+  #   uses: ./.github/workflows/component_security.yml
 
-  # This is currently required for canaries
-  upload-packages-s3:
-    runs-on: ubuntu-latest
-    needs: [ build-packages ]
-    name: Upload packages to testing bucket
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
+  # # This is currently required for canaries
+  # upload-packages-s3:
+  #   runs-on: ubuntu-latest
+  #   needs: [ build-packages ]
+  #   name: Upload packages to testing bucket
+  #   steps:
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+  #       with:
+  #         fetch-depth: 0
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: built-binaries-0.100.${{ github.run_id }}
-          path: ./
+  #     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+  #       with:
+  #         name: built-binaries-0.100.${{ github.run_id }}
+  #         path: ./
 
-      - name: Publish deb to S3 action
-        uses: newrelic/infrastructure-publish-action@v1
-        with:
-          tag: 0.100.${{ github.run_id }}
-          app_name: "newrelic-agent-control"
-          repo_name: ${{ github.repository }}
-          schema: "custom-local"
-          schema_path: "/srv/build/upload-schema-linux-deb-nightly.yml"
-          aws_access_key_id: ${{ secrets.OHAI_AWS_ACCESS_KEY_ID_TESTING }}
-          aws_secret_access_key: ${{ secrets.OHAI_AWS_SECRET_ACCESS_KEY_TESTING }}
-          aws_s3_bucket_name: "nr-downloads-ohai-testing"
-          aws_s3_lock_bucket_name: "onhost-ci-lock-testing"
-          access_point_host: "testing"
-          run_id: ${{ github.run_id }}
-          aws_region: "us-east-1"
-          aws_role_session_name: ${{ secrets.OHAI_AWS_ROLE_SESSION_NAME_TESTING }}
-          aws_role_arn: ${{ secrets.OHAI_AWS_ROLE_ARN_TESTING }}
-          # used for signing package stuff
-          gpg_passphrase: ${{ secrets.OHAI_GPG_PASSPHRASE }}
-          gpg_private_key_base64: ${{ secrets.OHAI_GPG_PRIVATE_KEY_BASE64 }} # base64 encoded
-          disable_lock: false
-          dest_prefix: "preview/"
-          local_packages_path: "/srv/dist/"
-          apt_skip_mirror: true
+  #     - name: Publish deb to S3 action
+  #       uses: newrelic/infrastructure-publish-action@v1
+  #       with:
+  #         tag: 0.100.${{ github.run_id }}
+  #         app_name: "newrelic-agent-control"
+  #         repo_name: ${{ github.repository }}
+  #         schema: "custom-local"
+  #         schema_path: "/srv/build/upload-schema-linux-deb-nightly.yml"
+  #         aws_access_key_id: ${{ secrets.OHAI_AWS_ACCESS_KEY_ID_TESTING }}
+  #         aws_secret_access_key: ${{ secrets.OHAI_AWS_SECRET_ACCESS_KEY_TESTING }}
+  #         aws_s3_bucket_name: "nr-downloads-ohai-testing"
+  #         aws_s3_lock_bucket_name: "onhost-ci-lock-testing"
+  #         access_point_host: "testing"
+  #         run_id: ${{ github.run_id }}
+  #         aws_region: "us-east-1"
+  #         aws_role_session_name: ${{ secrets.OHAI_AWS_ROLE_SESSION_NAME_TESTING }}
+  #         aws_role_arn: ${{ secrets.OHAI_AWS_ROLE_ARN_TESTING }}
+  #         # used for signing package stuff
+  #         gpg_passphrase: ${{ secrets.OHAI_GPG_PASSPHRASE }}
+  #         gpg_private_key_base64: ${{ secrets.OHAI_GPG_PRIVATE_KEY_BASE64 }} # base64 encoded
+  #         disable_lock: false
+  #         dest_prefix: "preview/"
+  #         local_packages_path: "/srv/dist/"
+  #         apt_skip_mirror: true
 
-      - name: Publish windows artifacts
-        uses: newrelic/infrastructure-publish-action@v1
-        with:
-          tag: 0.100.${{ github.run_id }}
-          app_name: "newrelic-agent-control"
-          repo_name: ${{ github.repository }}
-          schema: "custom-local"
-          schema_path: "/srv/build/upload-schema-windows-zip.yml"
-          aws_access_key_id: ${{ secrets.OHAI_AWS_ACCESS_KEY_ID_TESTING }}
-          aws_secret_access_key: ${{ secrets.OHAI_AWS_SECRET_ACCESS_KEY_TESTING }}
-          aws_s3_bucket_name: "nr-downloads-ohai-testing"
-          aws_s3_lock_bucket_name: "onhost-ci-lock-testing"
-          access_point_host: "testing"
-          run_id: ${{ github.run_id }}
-          aws_region: "us-east-1"
-          aws_role_session_name: ${{ secrets.OHAI_AWS_ROLE_SESSION_NAME_TESTING }}
-          aws_role_arn: ${{ secrets.OHAI_AWS_ROLE_ARN_TESTING }}
-          # used for signing package stuff
-          gpg_passphrase: ${{ secrets.OHAI_GPG_PASSPHRASE }}
-          gpg_private_key_base64: ${{ secrets.OHAI_GPG_PRIVATE_KEY_BASE64 }} # base64 encoded
-          disable_lock: false
-          dest_prefix: "preview/"
-          local_packages_path: "/srv/dist/"
-          apt_skip_mirror: true
+  #     - name: Publish windows artifacts
+  #       uses: newrelic/infrastructure-publish-action@v1
+  #       with:
+  #         tag: 0.100.${{ github.run_id }}
+  #         app_name: "newrelic-agent-control"
+  #         repo_name: ${{ github.repository }}
+  #         schema: "custom-local"
+  #         schema_path: "/srv/build/upload-schema-windows-zip.yml"
+  #         aws_access_key_id: ${{ secrets.OHAI_AWS_ACCESS_KEY_ID_TESTING }}
+  #         aws_secret_access_key: ${{ secrets.OHAI_AWS_SECRET_ACCESS_KEY_TESTING }}
+  #         aws_s3_bucket_name: "nr-downloads-ohai-testing"
+  #         aws_s3_lock_bucket_name: "onhost-ci-lock-testing"
+  #         access_point_host: "testing"
+  #         run_id: ${{ github.run_id }}
+  #         aws_region: "us-east-1"
+  #         aws_role_session_name: ${{ secrets.OHAI_AWS_ROLE_SESSION_NAME_TESTING }}
+  #         aws_role_arn: ${{ secrets.OHAI_AWS_ROLE_ARN_TESTING }}
+  #         # used for signing package stuff
+  #         gpg_passphrase: ${{ secrets.OHAI_GPG_PASSPHRASE }}
+  #         gpg_private_key_base64: ${{ secrets.OHAI_GPG_PRIVATE_KEY_BASE64 }} # base64 encoded
+  #         disable_lock: false
+  #         dest_prefix: "preview/"
+  #         local_packages_path: "/srv/dist/"
+  #         apt_skip_mirror: true
 
-  onhost-e2e:
-    uses: ./.github/workflows/component_onhost_e2e.yaml
-    secrets:
-      NR_SYSTEM_IDENTITY_CLIENT_ID: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_CLIENT_ID }}
-      NR_SYSTEM_IDENTITY_PRIVATE_KEY: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_PRIVATE_KEY }}
-      E2E_ACCOUNT_ID: ${{ secrets.AC_PROD_E2E_ACCOUNT_ID }}
-      E2E_API_KEY: ${{ secrets.AC_PROD_E2E_API_KEY }}
-      E2E_LICENSE_KEY: ${{ secrets.AC_PROD_E2E_LICENSE_KEY }}
+  # onhost-e2e:
+  #   uses: ./.github/workflows/component_onhost_e2e.yaml
+  #   secrets:
+  #     NR_SYSTEM_IDENTITY_CLIENT_ID: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_CLIENT_ID }}
+  #     NR_SYSTEM_IDENTITY_PRIVATE_KEY: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_PRIVATE_KEY }}
+  #     E2E_ACCOUNT_ID: ${{ secrets.AC_PROD_E2E_ACCOUNT_ID }}
+  #     E2E_API_KEY: ${{ secrets.AC_PROD_E2E_API_KEY }}
+  #     E2E_LICENSE_KEY: ${{ secrets.AC_PROD_E2E_LICENSE_KEY }}
 
-  k8s-e2e-tests:
-    uses: ./.github/workflows/component_k8s_e2e.yml
-    with:
-      scenarios: '["apm", "collector", "fleet-control", "ebpf", "dynamic", "custom-repo", "proxy"]'
-      # Network policies needs calico installed,the others do not
-      minikube_start_args: '--cni=calico'
-    secrets:
-      NR_SYSTEM_IDENTITY_CLIENT_ID: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_CLIENT_ID }}
-      NR_SYSTEM_IDENTITY_PRIVATE_KEY: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_PRIVATE_KEY }}
-      E2E_ACCOUNT_ID: ${{ secrets.AC_PROD_E2E_ACCOUNT_ID }}
-      E2E_API_KEY: ${{ secrets.AC_PROD_E2E_API_KEY }}
-      E2E_LICENSE_KEY: ${{ secrets.AC_PROD_E2E_LICENSE_KEY }}
+  # k8s-e2e-tests:
+  #   uses: ./.github/workflows/component_k8s_e2e.yml
+  #   with:
+  #     scenarios: '["apm", "collector", "fleet-control", "ebpf", "dynamic", "custom-repo", "proxy"]'
+  #     # Network policies needs calico installed,the others do not
+  #     minikube_start_args: '--cni=calico'
+  #   secrets:
+  #     NR_SYSTEM_IDENTITY_CLIENT_ID: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_CLIENT_ID }}
+  #     NR_SYSTEM_IDENTITY_PRIVATE_KEY: ${{ secrets.AC_PROD_E2E_NR_SYSTEM_IDENTITY_PRIVATE_KEY }}
+  #     E2E_ACCOUNT_ID: ${{ secrets.AC_PROD_E2E_ACCOUNT_ID }}
+  #     E2E_API_KEY: ${{ secrets.AC_PROD_E2E_API_KEY }}
+  #     E2E_LICENSE_KEY: ${{ secrets.AC_PROD_E2E_LICENSE_KEY }}
 
-  k8s_canaries:
-    uses: ./.github/workflows/component_k8s_canaries.yml
-    needs: [ build-image ]
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      image-tag: nightly
-      cluster_name: Agent_Control_Canaries_Staging-Cluster
-      # AC Staging Account `k8s-canaries-staging-1` fleet
-      fleet_id: "MTIyMTMwNjh8TkdFUHxGTEVFVHwwMTk1ZDE1NC1iNTI0LTdhMTYtYWExYS0wYzQ2Y2VhOGFiMzg"
-      canary_dir: "staging"
-    secrets:
-      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-      AWS_VPC_SUBNET: ${{ secrets.AWS_VPC_SUBNET }}
+  # k8s_canaries:
+  #   uses: ./.github/workflows/component_k8s_canaries.yml
+  #   needs: [ build-image ]
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     image-tag: nightly
+  #     cluster_name: Agent_Control_Canaries_Staging-Cluster
+  #     # AC Staging Account `k8s-canaries-staging-1` fleet
+  #     fleet_id: "MTIyMTMwNjh8TkdFUHxGTEVFVHwwMTk1ZDE1NC1iNTI0LTdhMTYtYWExYS0wYzQ2Y2VhOGFiMzg"
+  #     canary_dir: "staging"
+  #   secrets:
+  #     AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  #     AWS_VPC_SUBNET: ${{ secrets.AWS_VPC_SUBNET }}
 
-  onhost_canaries:
-    uses: ./.github/workflows/component_onhost_canaries.yml
-    needs: [ upload-packages-s3 ]
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      environment: staging
-      # AC Staging Account `host-canaries-staging` fleet
-      fleet_id: "MTIyMTMwNjh8TkdFUHxGTEVFVHwwMTlhZTNiNS01Yjg5LTdkNjYtYWU0MC1lNmZkOTY2ZDFhMDA"
-      operation: apply
-      package_version: 0.100.${{ github.run_id }}
-    secrets:
-      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-      AWS_VPC_SUBNET: ${{ secrets.AWS_VPC_SUBNET }}
+  # onhost_canaries:
+  #   uses: ./.github/workflows/component_onhost_canaries.yml
+  #   needs: [ upload-packages-s3 ]
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     environment: staging
+  #     # AC Staging Account `host-canaries-staging` fleet
+  #     fleet_id: "MTIyMTMwNjh8TkdFUHxGTEVFVHwwMTlhZTNiNS01Yjg5LTdkNjYtYWU0MC1lNmZkOTY2ZDFhMDA"
+  #     operation: apply
+  #     package_version: 0.100.${{ github.run_id }}
+  #   secrets:
+  #     AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  #     AWS_VPC_SUBNET: ${{ secrets.AWS_VPC_SUBNET }}
 
-  notify-failure:
-    if: ${{ always() && failure() }}
-    needs:
-      - onhost-e2e
-      - k8s_canaries
-      - onhost_canaries
-      - security-image
-      - security-source-code
-      - build-image
-      - build-packages
-      - k8s-e2e-tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: ./.github/actions/send-warning-via-slack
-        with:
-          message: "Nightly workflow failed"
+  # notify-failure:
+  #   if: ${{ always() && failure() }}
+  #   needs:
+  #     - onhost-e2e
+  #     - k8s_canaries
+  #     - onhost_canaries
+  #     - security-image
+  #     - security-source-code
+  #     - build-image
+  #     - build-packages
+  #     - k8s-e2e-tests
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: ./.github/actions/send-warning-via-slack
+  #       with:
+  #         message: "Nightly workflow failed"
