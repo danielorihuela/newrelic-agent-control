@@ -35,9 +35,11 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings -D clippy::all
       
       - name: cargo install cargo-llvm-cov
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         uses: taiki-e/install-action@71765c00dd3e08a5484a5b9e82a4c88b86520e0e # 71765c00dd3e08a5484a5b9e82a4c88b86520e0e
       
       - name: Generate coverage report
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         run: COVERAGE_OUT_FORMAT=json COVERAGE_OUT_FILEPATH=jcov.info make coverage
       
       - name: compile tests
